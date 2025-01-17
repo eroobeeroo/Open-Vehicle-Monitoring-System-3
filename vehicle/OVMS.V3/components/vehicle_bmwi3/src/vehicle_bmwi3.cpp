@@ -2,26 +2,18 @@
 ;    Project:       Open Vehicle Monitor System
 ;    Date:          14th March 2017
 ;
-;    Changes:
+;    OVMS Changes:
 ;    1.0  Initial release
 ;
 ;    (C) 2011       Michael Stegen / Stegen Electronics
 ;    (C) 2011-2017  Mark Webb-Johnson
-;    (C) 2011       Sonny Chen @ EPRO/DX
-;    (C) 2020       Stephen Davies - BMWi3 vehicle type
+;    (C) 2011        Sonny Chen @ EPRO/DX
+;
+;    BMW I3 component:
+;    Developed by Stephen Davies <steve@telviva.co.za>
 ;
 ;    2020-12-12     0.0       Work started
-;    2020-12-31     0.1       Workable version - most metrics supported, works with the ABRP plugin.  Open issues:
-;                               1) Detection that the car is "on" (ready to drive) is still ropey
-;                               2) Don't have individual cell data
-;                               3) Read-only - no sending of commands.
-;                               4) Detection of DC charging is only slightly tested
-;                               5) Would like to find a way to stop the OBD gateway going to sleep on us, eg when charging.
-;    2020-01-04               Ready to merge as a first version
-;
-;
-;    Note that if you leave the OVMS box connected to the OBD-II port and lock the car then the alarm will go off.
-;       This can be coded off using eg Bimmercode; I'll attempt to add a command to do that to this module at some point.
+;    2021-01-04               Ready to merge as first version
 ;
 ;
 ; Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -43,92 +35,120 @@
 ; THE SOFTWARE.
 */
 
-#include "ovms_log.h"
-static const char *TAG = "v-bmwi3";
+#ifndef __VEHICLE_BMWI3_H__
+#define __VEHICLE_BMWI3_H__
 
-#include <stdio.h>
-#include <math.h>
-#include "vehicle_bmwi3.h"
+#include "vehicle.h"
 
-#include "ovms_command.h"
-#include "can.h"
+using namespace std;
 
-// Register the second CAN bus
-void OvmsVehicleBMWi3::SetupSecondCanBus()
-{
-    ESP_LOGI(TAG, "Setting up second CAN bus");
-    RegisterCanBus(2, CAN_MODE_ACTIVE, CAN_SPEED_500KBPS); // Initialize second CAN bus at 500 kbps
-}
+// rxbuff access macros: b=byte# 0..7 / n=nibble# 0..15
+#define RXBUF_BYTE(b)     (rxbuf[b])
+#define RXBUF_UCHAR(b)    ((unsigned char)RXBUF_BYTE(b))
+#define RXBUF_SCHAR(b)    ((signed char)RXBUF_BYTE(b))
+#define RXBUF_UINT(b)     (((UINT)RXBUF_BYTE(b) << 8) | RXBUF_BYTE(b+1))
+#define RXBUF_SINT(b)     ((short)RXBUF_UINT(b))
+#define RXBUF_UINT24(b)   (((uint32_t)RXBUF_BYTE(b) << 16) | ((UINT)RXBUF_BYTE(b+1) << 8) | RXBUF_BYTE(b+2))
+#define RXBUF_UINT32(b)   (((uint32_t)RXBUF_BYTE(b) << 24) | ((uint32_t)RXBUF_BYTE(b+1) << 16)  | ((UINT)RXBUF_BYTE(b+2) << 8) | RXBUF_BYTE(b+3))
+#define RXBUF_SINT32(b)   ((int32_t)RXBUF_UINT32(b))
+#define RXBUF_NIBL(b)     (rxbuff[b] & 0x0f)
+#define RXBUF_NIBH(b)     (rxbuff[b] >> 4)
+#define RXBUF_NIB(n)      (((n)&1) ? RXBUF_NIBL((n)>>1) : RXBUF_NIBH((n)>>1))
 
-// Function to send a frame on the second CAN bus
-void OvmsVehicleBMWi3::SendSecondCanBusCommand(uint16_t id, uint8_t *data, size_t length)
-{
-    if (!m_can2)
-    {
-        ESP_LOGW(TAG, "Second CAN bus not initialized");
-        return;
-    }
 
-    CAN_frame_t frame;
-    frame.origin = m_can2;
-    frame.FIR.B.FF = CAN_frame_std; // Standard frame
-    frame.MsgID = id;              // CAN ID
-    frame.FIR.B.DLC = length;      // Data length
-    memcpy(frame.data.u8, data, length); // Data payload
+#define POLLSTATE_SHUTDOWN   0
+#define POLLSTATE_ALIVE      1
+#define POLLSTATE_READY      2
+#define POLLSTATE_CHARGING   3
 
-    ESP_LOGI(TAG, "Sending frame on second CAN bus: ID=0x%03X, Length=%d", id, length);
-    m_can2->Write(&frame); // Send the frame
-}
 
-// Function to send a wake-up frame on the second CAN bus
-void OvmsVehicleBMWi3::WakeUpCar()
-{
-    uint8_t dummy_data[1] = {0x00};
-    SendSecondCanBusCommand(0x000, dummy_data, 1); // Send a dummy frame with ID 0x000
-    ESP_LOGI(TAG, "Wake-up frame sent on second CAN bus");
-}
+class OvmsVehicleBMWi3 : public OvmsVehicle
+  {
+  public:
+    OvmsVehicleBMWi3();
+    ~OvmsVehicleBMWi3();
 
-// Function to activate preconditioning
-void OvmsVehicleBMWi3::ActivatePreconditioning()
-{
-    uint8_t preconditioning_data[2] = {0x00, 0xF2};
-    SendSecondCanBusCommand(0x2A2, preconditioning_data, 2);
-    ESP_LOGI(TAG, "Preconditioning activated via second CAN bus");
-}
+    void CanResponder(const CAN_frame_t* p_frame);
+    void Ticker1(uint32_t ticker) override;
+    void Ticker10(uint32_t ticker) override;
 
-// Function to unlock the car
-void OvmsVehicleBMWi3::UnlockCar()
-{
-    uint8_t unlock_data[2] = {0xC8, 0xFF};
-    SendSecondCanBusCommand(0x3A3, unlock_data, 2);
-    ESP_LOGI(TAG, "Unlock command sent via second CAN bus");
-}
+    // New methods for second CAN bus
+    void SetupSecondCanBus();
+    void SendSecondCanBusCommand(uint16_t id, uint8_t* data, size_t length);
+    void WakeUpCar();
+    void ActivatePreconditioning();
+    void UnlockCar();
+    void LockCar();
+    void RegisterUserCommands(); // Added declaration for RegisterUserCommands()
 
-// Function to lock the car
-void OvmsVehicleBMWi3::LockCar()
-{
-    uint8_t lock_data[2] = {0xD0, 0xFF};
-    SendSecondCanBusCommand(0x3A3, lock_data, 2);
-    ESP_LOGI(TAG, "Lock command sent via second CAN bus");
-}
+  protected:
+    string bmwi3_obd_rxbuf;                               // CAN messages unpacked into here
+    float hv_volts;                                       // Traction battery voltage - used to calculate power from current
+    float soc = 0.0f;                                     // Remember SOC for derivative calcs
+    int framecount = 0, tickercount = 0, replycount = 0;  // Keep track of when the car is talking or schtum.
+    int eps_messages = 0;                                 // Is the EPS (power steering) alive?  If so we are "on"
+    int pollerstate;                                      // What pollerstate we are in
+    int last_obd_data_seen;                               // "monotonic" value last time we saw data
 
-// Modify constructor to initialize the second CAN bus
-OvmsVehicleBMWi3::OvmsVehicleBMWi3()
-{
-    ESP_LOGI(TAG, "BMW i3/i3s vehicle module initialized");
+    // Local metrics
+    // Wheel speeds
+    OvmsMetricFloat *mt_i3_wheel1_speed;
+    OvmsMetricFloat *mt_i3_wheel2_speed;
+    OvmsMetricFloat *mt_i3_wheel3_speed;
+    OvmsMetricFloat *mt_i3_wheel4_speed;
+    OvmsMetricFloat *mt_i3_wheel_speed;   // "Combined" the car calls it.  Not sure how its combined
+    // Charge limits
+    OvmsMetricFloat *mt_i3_charge_actual;
+    OvmsMetricFloat *mt_i3_charge_max;
+    OvmsMetricFloat *mt_i3_charge_min;
+    // Cell OCV (Open circuit voltage) stats
+    OvmsMetricFloat *mt_i3_batt_pack_ocv_avg;
+    OvmsMetricFloat *mt_i3_batt_pack_ocv_min;
+    OvmsMetricFloat *mt_i3_batt_pack_ocv_max;
+    // Ranges
+    OvmsMetricInt *mt_i3_range_bc;
+    OvmsMetricInt *mt_i3_range_comfort;
+    OvmsMetricInt *mt_i3_range_ecopro;
+    OvmsMetricInt *mt_i3_range_ecoproplus;
+    // Charging
+    OvmsMetricInt *mt_i3_v_charge_voltage_phase1;
+    OvmsMetricInt *mt_i3_v_charge_voltage_phase2;
+    OvmsMetricInt *mt_i3_v_charge_voltage_phase3;
+    OvmsMetricFloat *mt_i3_v_charge_voltage_dc;
+    OvmsMetricFloat *mt_i3_v_charge_voltage_dc_limit;
+    OvmsMetricFloat *mt_i3_v_charge_current_phase1;
+    OvmsMetricFloat *mt_i3_v_charge_current_phase2;
+    OvmsMetricFloat *mt_i3_v_charge_current_phase3;
+    OvmsMetricFloat *mt_i3_v_charge_current_dc;
+    OvmsMetricFloat *mt_i3_v_charge_current_dc_limit;
+    OvmsMetricFloat *mt_i3_v_charge_current_dc_maxlimit;
+    OvmsMetricInt *mt_i3_v_charge_deratingreasons;
+    OvmsMetricInt *mt_i3_v_charge_faults;
+    OvmsMetricInt *mt_i3_v_charge_failsafetriggers;
+    OvmsMetricInt *mt_i3_v_charge_interruptionreasons;
+    OvmsMetricInt *mt_i3_v_charge_errors;
+    OvmsMetricBool *mt_i3_v_charge_readytocharge;
+    OvmsMetricString *mt_i3_v_charge_plugstatus;
+    OvmsMetricInt *mt_i3_v_charge_pilotsignal;
+    OvmsMetricInt *mt_i3_v_charge_cablecapacity;
+    OvmsMetricBool *mt_i3_v_charge_dc_plugconnected;
+    OvmsMetricInt *mt_i3_v_charge_chargeledstate;
+    OvmsMetricInt *mt_i3_v_charge_dc_voltage;
+    OvmsMetricInt *mt_i3_v_charge_dc_controlsignals;
+    OvmsMetricBool *mt_i3_v_door_dc_chargeport;
+    OvmsMetricBool *mt_i3_v_charge_dc_inprogress;
+    OvmsMetricString *mt_i3_v_charge_dc_contactorstatus;
+    OvmsMetricInt *mt_i3_v_charge_temp_gatedriver;
+    // Trip consumption
+    OvmsMetricInt *mt_i3_v_pos_tripconsumption;
+    // Cabin aircon
+    OvmsMetricBool *mt_i3_v_env_autorecirc;
+    // State
+    OvmsMetricBool *mt_i3_obdisalive;
+    OvmsMetricInt *mt_i3_pollermode;
+    OvmsMetricInt *mt_i3_age;
 
-    // Set up the second CAN bus
-    SetupSecondCanBus();
+    void IncomingPollReply(const OvmsPoller::poll_job_t &job, uint8_t* data, uint8_t length) override;
+  };
 
-    // Other initializations remain unchanged
-}
-
-// Add commands for testing functionality
-void OvmsVehicleBMWi3::RegisterUserCommands()
-{
-    OvmsCommand *cmd_vehicle = MyCommandApp.RegisterCommand("vehicle", "Vehicle framework");
-    cmd_vehicle->RegisterCommand("wake", "Wake up the car", [this](int, OvmsWriter*, OvmsCommand*, int, const char*[]) { WakeUpCar(); }, "");
-    cmd_vehicle->RegisterCommand("precondition", "Activate preconditioning", [this](int, OvmsWriter*, OvmsCommand*, int, const char*[]) { ActivatePreconditioning(); }, "");
-    cmd_vehicle->RegisterCommand("unlock", "Unlock the car", [this](int, OvmsWriter*, OvmsCommand*, int, const char*[]) { UnlockCar(); }, "");
-    cmd_vehicle->RegisterCommand("lock", "Lock the car", [this](int, OvmsWriter*, OvmsCommand*, int, const char*[]) { LockCar(); }, "");
-}
+#endif //#ifndef __VEHICLE_BMWI3_H__
