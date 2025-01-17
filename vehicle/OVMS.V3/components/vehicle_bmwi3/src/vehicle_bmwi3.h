@@ -57,8 +57,8 @@ using namespace std;
 
 
 #define POLLSTATE_SHUTDOWN   0
-#define POLLSTATE_ALIVE	     1
-#define POLLSTATE_READY	     2
+#define POLLSTATE_ALIVE      1
+#define POLLSTATE_READY      2
 #define POLLSTATE_CHARGING   3
 
 
@@ -67,11 +67,18 @@ class OvmsVehicleBMWi3 : public OvmsVehicle
   public:
     OvmsVehicleBMWi3();
     ~OvmsVehicleBMWi3();
+
     void CanResponder(const CAN_frame_t* p_frame);
     void Ticker1(uint32_t ticker) override;
     void Ticker10(uint32_t ticker) override;
 
-
+    // New methods for second CAN bus
+    void SetupSecondCanBus();
+    void SendSecondCanBusCommand(uint16_t id, uint8_t* data, size_t length);
+    void WakeUpCar();
+    void ActivatePreconditioning();
+    void UnlockCar();
+    void LockCar();
 
   protected:
     string bmwi3_obd_rxbuf;                               // CAN messages unpacked into here
