@@ -82,7 +82,7 @@ class OvmsVehicleBMWi3 : public OvmsVehicle
     int pollerstate;                                      // What pollerstate we are in
     int last_obd_data_seen;                               // "monotonic" value last time we saw data
     canbus* m_can2;  // Second CAN bus for preconditioning
-
+    OvmsMetricBool* mt_i3_preconditioning_available;  // Metric to indicate availability
     // Local metrics
     // Wheel speeds
     OvmsMetricFloat *mt_i3_wheel1_speed;
