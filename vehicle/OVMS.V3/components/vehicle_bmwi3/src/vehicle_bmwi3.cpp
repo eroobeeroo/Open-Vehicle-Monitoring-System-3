@@ -287,6 +287,7 @@ OvmsVehicleBMWi3::OvmsVehicleBMWi3()
     PollSetThrottling(50);
     PollSetResponseSeparationTime(5);
     RegisterCanBus(2, CAN_MODE_ACTIVE, CAN_SPEED_500KBPS);
+  mt_i3_preconditioning_available = MyMetrics.InitBool("xi3.v.precondition.available", SM_STALE_MIN, true);
   OvmsCommand* cmd_vehicle = MyCommandApp.FindCommand("vehicle");
     if (cmd_vehicle)
     {
@@ -295,7 +296,7 @@ OvmsVehicleBMWi3::OvmsVehicleBMWi3()
             this->SendPreconditioningCommand();
         });
     }
-  mt_i3_preconditioning_available = MyMetrics.InitBool("xi3.v.precondition.available", SM_STALE_MIN, true);
+  
 
 }
 
