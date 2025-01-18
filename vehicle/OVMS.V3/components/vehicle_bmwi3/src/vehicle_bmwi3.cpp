@@ -350,12 +350,12 @@ OvmsVehicle::vehicle_command_t OvmsVehicleBMWi3::CommandClimateControl(bool clim
     {
         ESP_LOGI(TAG, "Preconditioning ON command received");
         SendPreconditioningCommand();  // Call the method to send the CAN message
-        return OvmsVehicle::Success;  // Return a success command identifier
+        return Success;  // Return a success command identifier
     }
     else
     {
         ESP_LOGI(TAG, "Preconditioning OFF not supported");
-        return OvmsVehicle::Fail;  // Return a command identifier for unsupported functionality
+        return Fail;  // Return a command identifier for unsupported functionality
     }
 }
 
