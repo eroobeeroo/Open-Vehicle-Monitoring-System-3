@@ -349,7 +349,7 @@ OvmsVehicle::vehicle_command_t OvmsVehicleBMWi3::CommandClimateControl(bool clim
     OvmsVehicle::vehicle_command_t command;
           ESP_LOGI(TAG, "CommandClimateControl");
         SendPreconditioningCommand();  // Call the method to send the CAN message
-        command.success = true;  // Set the success field to true
+        
  
 
     return command;  // Return the updated command
