@@ -346,12 +346,19 @@ void OvmsVehicleBMWi3::Ticker1(uint32_t ticker)
 }
 OvmsVehicle::vehicle_command_t OvmsVehicleBMWi3::CommandClimateControl(bool climatecontrolon)
 {
-  
+    if (climatecontrolon)
+    {
         ESP_LOGI(TAG, "Preconditioning ON command received");
         SendPreconditioningCommand();  // Call the method to send the CAN message
-        OvmsVehicle::vehicle_command_t Success;  // Return the command identifier for success
-   
+        return OvmsVehicle::Success;  // Return a success command identifier
+    }
+    else
+    {
+        ESP_LOGI(TAG, "Preconditioning OFF not supported");
+        return OvmsVehicle::Fail;  // Return a command identifier for unsupported functionality
+    }
 }
+
 void OvmsVehicleBMWi3::Ticker10(uint32_t ticker)
 {
     // 1) Is the car responsive - ie replying to our polls?
