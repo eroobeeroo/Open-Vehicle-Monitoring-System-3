@@ -344,13 +344,13 @@ void OvmsVehicleBMWi3::Ticker1(uint32_t ticker)
         PollSetState(pollerstate);
     }
 }
-vehicle_command_t OvmsVehicleBMWi3::CommandClimateControl(bool on)
+OvmsVehicle::vehicle_command_t OvmsVehicleBMWi3::CommandClimateControl(bool climatecontrolon)
 {
-    vehicle_command_t command;
+    OvmsVehicle::vehicle_command_t command;
 
     if (on)
     {
-        ESP_LOGI(TAG, "Preconditioning ON command received");
+          ESP_LOGI(TAG, "CommandClimateControl");
         SendPreconditioningCommand();  // Call the method to send the CAN message
         command.success = true;  // Set the success field to true
     }
