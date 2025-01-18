@@ -71,7 +71,7 @@ class OvmsVehicleBMWi3 : public OvmsVehicle
     void Ticker1(uint32_t ticker) override;
     void Ticker10(uint32_t ticker) override;
     void SendPreconditioningCommand();  // New method to send preconditioning command
-
+    virtual bool CommandClimateControl(bool on) override;  // Add this declaration
 
   protected:
     string bmwi3_obd_rxbuf;                               // CAN messages unpacked into here
@@ -82,7 +82,7 @@ class OvmsVehicleBMWi3 : public OvmsVehicle
     int pollerstate;                                      // What pollerstate we are in
     int last_obd_data_seen;                               // "monotonic" value last time we saw data
     canbus* m_can2;  // Second CAN bus for preconditioning
-    OvmsMetricBool* mt_i3_preconditioning_available;  // Metric to indicate availability
+
     // Local metrics
     // Wheel speeds
     OvmsMetricFloat *mt_i3_wheel1_speed;
