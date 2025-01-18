@@ -287,6 +287,14 @@ OvmsVehicleBMWi3::OvmsVehicleBMWi3()
     PollSetThrottling(50);
     PollSetResponseSeparationTime(5);
     RegisterCanBus(2, CAN_MODE_ACTIVE, CAN_SPEED_500KBPS);
+  OvmsCommand* cmd_vehicle = MyCommandApp.FindCommand("vehicle");
+    if (cmd_vehicle)
+    {
+        cmd_vehicle->RegisterCommand("precondition", "Activate preconditioning", [this](int argc, const char* argv[])
+        {
+            this->SendPreconditioningCommand();
+        });
+    }
 }
 
 OvmsVehicleBMWi3::~OvmsVehicleBMWi3()
