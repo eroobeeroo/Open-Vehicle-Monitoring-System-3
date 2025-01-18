@@ -346,13 +346,13 @@ void OvmsVehicleBMWi3::Ticker1(uint32_t ticker)
 }
 OvmsVehicle::vehicle_command_t OvmsVehicleBMWi3::CommandClimateControl(bool climatecontrolon)
 {
-    OvmsVehicle::vehicle_command_t command;
+    //OvmsVehicle::vehicle_command_t command;
           ESP_LOGI(TAG, "CommandClimateControl");
         SendPreconditioningCommand();  // Call the method to send the CAN message
         
  
 
-    return command;  // Return the updated command
+   // return command;  // Return the updated command
 }
 void OvmsVehicleBMWi3::Ticker10(uint32_t ticker)
 {
