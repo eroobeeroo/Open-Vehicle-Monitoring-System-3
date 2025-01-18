@@ -71,7 +71,7 @@ class OvmsVehicleBMWi3 : public OvmsVehicle
     void Ticker1(uint32_t ticker) override;
     void Ticker10(uint32_t ticker) override;
     void SendPreconditioningCommand();  // New method to send preconditioning command
-    void CommandClimateControl(bool enable) override;
+    vehicle_command_t CommandClimateControl(bool enable) override;
 
   protected:
     string bmwi3_obd_rxbuf;                               // CAN messages unpacked into here
