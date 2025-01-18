@@ -81,6 +81,7 @@ class OvmsVehicleBMWi3 : public OvmsVehicle
     int eps_messages = 0;                                 // Is the EPS (power steering) alive?  If so we are "on"
     int pollerstate;                                      // What pollerstate we are in
     int last_obd_data_seen;                               // "monotonic" value last time we saw data
+    bool m_enable_write;
     canbus* m_can2;  // Second CAN bus for preconditioning
 
     // Local metrics
