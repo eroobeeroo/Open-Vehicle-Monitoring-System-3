@@ -295,6 +295,8 @@ OvmsVehicleBMWi3::OvmsVehicleBMWi3()
             this->SendPreconditioningCommand();
         });
     }
+  mt_i3_preconditioning_available = MyMetrics.InitBool("xi3.v.precondition.available", SM_STALE_MIN, true);
+
 }
 
 OvmsVehicleBMWi3::~OvmsVehicleBMWi3()
