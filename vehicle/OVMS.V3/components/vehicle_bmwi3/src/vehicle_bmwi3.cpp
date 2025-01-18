@@ -2612,6 +2612,7 @@ case I3_PID_IHX_TEMP_INNEN_UNBELUEFTET: {                                       
   }
 
   } /* switch */
+}
   void OvmsVehicleBMWi3::SendPreconditioningCommand()
 {
     CAN_frame_t frame;
@@ -2631,7 +2632,7 @@ case I3_PID_IHX_TEMP_INNEN_UNBELUEFTET: {                                       
         ESP_LOGE(TAG, "Failed to send preconditioning command on CAN2");
     }
 }
-}
+
 class OvmsVehicleBMWi3Init
 {
   public: OvmsVehicleBMWi3Init();
