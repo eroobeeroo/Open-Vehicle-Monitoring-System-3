@@ -287,17 +287,6 @@ OvmsVehicleBMWi3::OvmsVehicleBMWi3()
     PollSetThrottling(50);
     PollSetResponseSeparationTime(5);
     RegisterCanBus(2, CAN_MODE_ACTIVE, CAN_SPEED_500KBPS);
-  mt_i3_preconditioning_available = MyMetrics.InitBool("xi3.v.precondition.available", SM_STALE_MIN, true);
-  OvmsCommand* cmd_vehicle = MyCommandApp.FindCommand("vehicle");
-    if (cmd_vehicle)
-    {
-        cmd_vehicle->RegisterCommand("precondition", "Activate preconditioning", [this](int argc, const char* argv[])
-        {
-            this->SendPreconditioningCommand();
-        });
-    }
-  
-
 }
 
 OvmsVehicleBMWi3::~OvmsVehicleBMWi3()
@@ -355,7 +344,20 @@ void OvmsVehicleBMWi3::Ticker1(uint32_t ticker)
         PollSetState(pollerstate);
     }
 }
-
+bool OvmsVehicleBMWi3::CommandClimateControl(bool on)
+{
+    if (on)
+    {
+        ESP_LOGI(TAG, "Preconditioning ON command received");
+        SendPreconditioningCommand();  // Call the method to send the CAN message
+        return true;  // Indicate success
+    }
+    else
+    {
+        ESP_LOGI(TAG, "Preconditioning OFF not supported");
+        return false;  // Indicate that turning off is not supported
+    }
+}
 void OvmsVehicleBMWi3::Ticker10(uint32_t ticker)
 {
     // 1) Is the car responsive - ie replying to our polls?
@@ -2656,4 +2658,3 @@ OvmsVehicleBMWi3Init::OvmsVehicleBMWi3Init()
 
   MyVehicleFactory.RegisterVehicle<OvmsVehicleBMWi3>("BMWI3", "BMW i3, i3s");
 }
-
