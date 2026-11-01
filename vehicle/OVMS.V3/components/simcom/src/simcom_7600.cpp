@@ -32,7 +32,7 @@
 static const char *TAG = "SIM7600";
 
 #include <string.h>
-#include "ovms_peripherals.h"
+#include "simcom_powering.h"
 #include "simcom_7600.h"
 
 const char model[] = "SIM7600";
@@ -56,6 +56,10 @@ simcom7600::simcom7600()
 simcom7600::~simcom7600()
   {
   }
+
+std::string simcom7600::GetNetTypes() {
+  return "auto 2G 3G 4G";
+}
 
 const char* simcom7600::GetModel()
   {
@@ -110,7 +114,7 @@ void simcom7600::ShutdownNMEA()
     { ESP_LOGE(TAG, "Attempt to transmit on non running mux"); }
   }
 
-void simcom7600::StatusPoller()
+  void simcom7600::StatusPoller()
   {
   if (m_modem->m_mux != NULL)
     {
@@ -143,35 +147,22 @@ void simcom7600::StatusPoller()
     }
   }
 
+
 void simcom7600::PowerOff()
   {
-  unsigned int psd = 3000;    // min 2500ms
-  ESP_LOGI(TAG, "Power Off (SIM7600) %dms",psd);
-
+  ESP_LOGV(TAG, "Power Off");
   modemdriver::PowerSleep(false);
   uart_wait_tx_done(m_modem->m_uartnum, portMAX_DELAY);
   uart_flush(m_modem->m_uartnum); // Flush the ring buffer, to try to address MUX start issues
-#ifdef CONFIG_OVMS_COMP_MAX7317
-  MyPeripherals->m_max7317->Output(MODEM_EGPIO_PWR, 0); // Modem EN/PWR line low
-  MyPeripherals->m_max7317->Output(MODEM_EGPIO_PWR, 1); // Modem EN/PWR line high
-  vTaskDelay(psd / portTICK_PERIOD_MS);
-  MyPeripherals->m_max7317->Output(MODEM_EGPIO_PWR, 0); // Modem EN/PWR line low
-#endif // #ifdef CONFIG_OVMS_COMP_MAX7317
+  SimcomPowerOff(3000);
   }
 
 void simcom7600::PowerCycle()
   {
-  unsigned int psd = 500;     // min 100ms  typical 500ms
-  ESP_LOGI(TAG, "Power Cycle (SIM7600) %dms, wait 10s for uart",psd);
-
+  ESP_LOGV(TAG, "Power Cycle");
   uart_wait_tx_done(m_modem->m_uartnum, portMAX_DELAY);
-  uart_flush(m_modem->m_uartnum); // Flush the ring buffer, to try to address MUX start issues
-#ifdef CONFIG_OVMS_COMP_MAX7317
-  MyPeripherals->m_max7317->Output(MODEM_EGPIO_PWR, 0); // Modem EN/PWR line low
-  MyPeripherals->m_max7317->Output(MODEM_EGPIO_PWR, 1); // Modem EN/PWR line high
-  vTaskDelay(psd / portTICK_PERIOD_MS);
-  MyPeripherals->m_max7317->Output(MODEM_EGPIO_PWR, 0); // Modem EN/PWR line low
-#endif // #ifdef CONFIG_OVMS_COMP_MAX7317
+  uart_flush(m_modem->m_uartnum);       // Flush the ring buffer, to try to address MUX start issues
+  SimcomPowerCycle(-1, 500, 3000);
   }
 
 bool simcom7600::State1Leave(modem::modem_state1_t oldstate)
@@ -231,7 +222,7 @@ modem::modem_state1_t simcom7600::State1Ticker1(modem::modem_state1_t curstate)
         m_modem->tx("AT+CPIN?;+CREG=1;+CGREG=1;+CEREG=1;+CTZU=1;+CTZR=1;+CLIP=1;+CMGF=1;+CNMI=1,2,0,0,0;+CSDH=1;+CMEE=2;+CSQ;+AUTOCSQ=1,1;E0;S0=0\r\n");
         break;
       case 12:
-        m_modem->tx("AT+CGMR;+ICCID\r\n");
+        m_modem->tx("AT+CGMR;+CICCID\r\n");
         break;
       case 20:
         // start MUX mode, route URCs to MUX channel 3 (POLL)

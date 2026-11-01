@@ -60,6 +60,7 @@
 ////////////////////////////////////////////////////////////////////////
 
 #define CAN_MAXBUSES 5            // Limit of number of CAN buses supported
+#define CAN_RXSTALL_THRESHOLD 20  // Seconds of frozen RX counter before probing for a wedged RX path
 
 class canbus; // Forward definition
 
@@ -156,6 +157,9 @@ typedef struct
   uint16_t watchdog_resets;         // Watchdog reset counter
   uint16_t error_resets;            // Error resolving reset counter
   uint32_t error_time;              // monotonictime of last error state detection
+  uint16_t isr_queue_overrun;       // ISR->task service ping dropped (queue full); not a lost
+                                     // frame -- raw data stays latched in the HW RX buffer, the
+                                     // RX-stall watchdog is the backstop that re-arms the line
   } CAN_status_t;
 
 // CAN error states
@@ -220,14 +224,18 @@ class canfilter
 
   public:
     void ClearFilters();
-    void AddFilter(uint8_t bus=0, uint32_t id_from=0, uint32_t id_to=UINT32_MAX);
-    void AddFilter(const char* filterstring);
+    bool AddFilter(uint8_t bus=0, uint32_t id_from=0, uint32_t id_to=UINT32_MAX);
+    bool AddFilter(const char* filterstring);
     bool RemoveFilter(uint8_t bus=0, uint32_t id_from=0, uint32_t id_to=UINT32_MAX);
 
   public:
     bool IsFiltered(const CAN_frame_t* p_frame);
     bool IsFiltered(canbus* bus);
     std::string Info();
+    bool HasFilters()
+      {
+      return !m_filters.empty();
+      }
 
   protected:
     CAN_filter_list_t m_filters;
@@ -313,6 +321,13 @@ class canbus : public pcp, public InternalRamAllocated
     virtual bool AsynchronousInterruptHandler(CAN_frame_t* frame, uint32_t* framesReceived);
     virtual void TxCallback(CAN_frame_t* frame, bool success);
 
+    // Driver-specific hardware confirmation of a wedged RX path: called by the
+    // stall watchdog (BusTicker10) only after our RX counter has been frozen
+    // for the check interval. Must be a live register readback (SPI etc.), not
+    // a state cache, and must return false whenever the bus is idle/asleep with
+    // no pending unserviced RX data. Default: no hardware confirmation available.
+    virtual bool CheckRxStalled() { return false; }
+
   protected:
     virtual esp_err_t QueueWrite(const CAN_frame_t* p_frame, TickType_t maxqueuewait=0);
     virtual void BusTicker10(std::string event, void* data);
@@ -324,6 +339,7 @@ class canbus : public pcp, public InternalRamAllocated
     bool StatusChanged();
     CAN_errorstate_t GetErrorState();
     const char* GetErrorStateName();
+    virtual bool GetErrorFlagsDesc(std::string &buffer, uint32_t error_flags);
 
   public:
     CAN_speed_t m_speed;
@@ -333,6 +349,8 @@ class canbus : public pcp, public InternalRamAllocated
     uint32_t m_status_chksum;
     uint32_t m_watchdog_timer;
     uint32_t m_state;             // state bitset
+    uint32_t m_rxstall_checkpoint; // last m_status.packets_rx value observed by the stall watchdog
+    uint32_t m_rxstall_since;      // monotonictime the checkpoint last changed
     QueueHandle_t m_txqueue;
     int m_busnumber;
 
@@ -386,11 +404,12 @@ class can : public InternalRamAllocated
 
   public:
     void RegisterCallback(const char* caller, CanFrameCallback callback, bool txfeedback=false);
+    void RegisterCallbackFront(const char* caller, CanFrameCallback callback, bool txfeedback=false);
     void DeregisterCallback(const char* caller);
     int ExecuteCallbacks(const CAN_frame_t* frame, bool tx, bool success);
 
   public:
-    uint32_t AddLogger(canlog* logger, int filterc=0, const char* const* filterv=NULL);
+    uint32_t AddLogger(canlog* logger, int filterc=0, const char* const* filterv=NULL, OvmsWriter* writer=NULL);
     bool HasLogger();
     canlog* GetLogger(uint32_t id);
     bool RemoveLogger(uint32_t id);

@@ -35,17 +35,19 @@ static const char *TAG = "http";
 #include "ovms_config.h"
 #include "metrics_standard.h"
 
-OvmsHttpClient::OvmsHttpClient()
+OvmsHttpClient::OvmsHttpClient(long timeout_ms /*= 10000*/)
   {
   m_buf = NULL;
   m_bodysize = 0;
   m_responsecode = 0;
+  m_timeout_ms = timeout_ms;
   }
 
-OvmsHttpClient::OvmsHttpClient(std::string url, const char* method)
+OvmsHttpClient::OvmsHttpClient(std::string url, const char* method, long timeout_ms /*= 10000*/, size_t range_start /*= 0*/)
   {
   m_buf = NULL;
-  Request(url, method);
+  m_timeout_ms = timeout_ms;
+  Request(url, method, range_start);
   }
 
 OvmsHttpClient::~OvmsHttpClient()
@@ -57,8 +59,12 @@ OvmsHttpClient::~OvmsHttpClient()
     }
   }
 
-bool OvmsHttpClient::Request(std::string url, const char* method)
+bool OvmsHttpClient::Request(std::string url, const char* method, size_t range_start /*= 0*/)
   {
+  if (m_buf != NULL || IsOpen())
+    {
+    Disconnect();
+    }
   m_bodysize = 0;
   m_responsecode = 0;
 
@@ -111,6 +117,12 @@ bool OvmsHttpClient::Request(std::string url, const char* method)
   req.append(server);
   req.append("\r\nUser-Agent: ");
   req.append(get_user_agent());
+  if (range_start > 0)
+    {
+    char range_hdr[48];
+    snprintf(range_hdr, sizeof(range_hdr), "\r\nRange: bytes=%u-", (unsigned)range_start);
+    req.append(range_hdr);
+    }
   req.append("\r\n\r\n");
   if (Write(req.c_str(), req.length()) < 0)
     {
@@ -119,10 +131,11 @@ bool OvmsHttpClient::Request(std::string url, const char* method)
     return false;
     }
 
-  m_buf = new OvmsBuffer(1024);
+  m_buf = new OvmsBuffer(4096);
+  assert(m_buf);
   bool inheaders = true;
   // ESP_LOGI(TAG,"Reading headers...");
-  while((inheaders)&&(m_buf->PollSocket(m_sock, 10000) >= 0))
+  while((inheaders)&&(m_buf->PollSocket(m_sock, m_timeout_ms) > 0))
     {
     // ESP_LOGI(TAG, "Now buffered %d bytes",m_buf->UsedSpace());
     int k = m_buf->HasLine();
@@ -176,26 +189,24 @@ void OvmsHttpClient::Disconnect()
   OvmsNetTcpConnection::Disconnect();
   }
 
-size_t OvmsHttpClient::BodyRead(void *buf, size_t nbyte)
+ssize_t OvmsHttpClient::BodyRead(void *buf, size_t nbyte)
   {
-  // char *x = (char*)buf;
-  if ((m_buf == NULL)||(m_buf->UsedSpace() == 0))
+  if (m_buf == NULL)
     {
-    size_t n = Read(buf,nbyte);
-    // ESP_EARLY_LOGI(TAG, "BodyRead got %d bytes direct (%02x %02x %02x %02x)",n,x[0],x[1],x[2],x[3]);
-    return n;
+    m_buf = new OvmsBuffer(4096);
+    assert(m_buf);
     }
-  else
+
+  if (m_buf->UsedSpace() == 0)
     {
-    size_t n = m_buf->Pop(nbyte,(uint8_t*)buf);
-    // ESP_EARLY_LOGI(TAG, "Body Read got %d bytes from buf (%d left) (%02x %02x %02x %02x)",n,m_buf->UsedSpace(),x[0],x[1],x[2],x[3]);
-    if (m_buf->UsedSpace() == 0)
-      {
-      delete m_buf;
-      m_buf = NULL;
-      }
-    return n;
+    // fill buffer using select() (non-blocking):
+    ssize_t rlen = m_buf->PollSocket(m_sock, m_timeout_ms);
+    if (rlen <= 0) return rlen; // EOF or error
     }
+
+  // read from buffer:
+  size_t n = m_buf->Pop(nbyte, (uint8_t*) buf);
+  return (ssize_t) n;
   }
 
 int OvmsHttpClient::BodyHasLine()
@@ -205,7 +216,7 @@ int OvmsHttpClient::BodyHasLine()
 
   if (m_buf->HasLine()<0)
     {
-    m_buf->PollSocket(m_sock, 10000);
+    m_buf->PollSocket(m_sock, m_timeout_ms);
     // m_buf->Diagnostics();
     }
   return m_buf->HasLine();
@@ -218,7 +229,7 @@ std::string OvmsHttpClient::BodyReadLine()
 
   if (m_buf->HasLine()<0)
     {
-    m_buf->PollSocket(m_sock, 10000);
+    m_buf->PollSocket(m_sock, m_timeout_ms);
     // m_buf->Diagnostics();
     }
 
@@ -250,7 +261,8 @@ std::string OvmsHttpClient::GetBodyAsString()
 
   uint8_t rbuf[512];
   size_t filesize = 0;
-  while (int k = BodyRead(rbuf,512))
+  ssize_t k;
+  while ((k = BodyRead(rbuf,512)) > 0)
     {
     filesize += k;
     body.append((const char*)rbuf,k);

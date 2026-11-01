@@ -18,7 +18,7 @@ Client & Access Point Modes
 
 The OVMS WiFi network can be configured as a client (connecting to existing WiFi networks) and/or 
 access point (providing it's own private WiFi network). Both modes can be run simultaneously, which 
-is the recommended default. That way, you can always connect to your module via WiFi.
+is the recommended default for beginners. That way, you can always connect to your module via WiFi.
 
 ::
 
@@ -60,12 +60,33 @@ configure your default mode and networks.
   via WiFi instead of the modem for the module's internet access (you won't need the modem in this 
   setup).
 
+
 .. toctree::
    :maxdepth: 1
    :caption: More details:
 
    wifi/client
    wifi/access-point
+
+
+^^^^^^^^^^^^^^^^^
+WiFi Mode Caveats
+^^^^^^^^^^^^^^^^^
+
+Running the WiFi system in "**Access point + client mode**" (``apclient`` mode)
+has an effect on the available bandwidth/speed (as the AP network needs to use
+the same channel) and **may reduce the signal strength** seen from other WiFi
+networks for the client role by around **5-8 dBm**.
+
+The access point mode of the module also implies an **additional power consumption of ~300 mW**,
+while the client mode alone only accounts for ~20 mW.
+
+So, once you no longer need the module's access point to access the module via ``192.168.4.1``,
+it is recommended to switch the WiFi mode to **client mode only**, to maximize WiFi connectivity
+and minimize power consumption.
+
+If you need the AP mode only for certain situations (e.g. some locations only), consider
+using scripts to dynamically switch the WiFi mode as needed.
 
 
 ---------------------
@@ -198,9 +219,27 @@ third argument to the ``wifi mode apclient`` command::
 This currently needs manual activation by command. Hint: use a script, for example bound to a 
 location.
 
-------------------------------
+
+------------------
+Open Wifi Networks
+------------------
+
+To connect to an open (password-less) WiFi network, set ``-`` (dash) or ``OPEN`` as the WiFi password.
+
+Open WiFi networks may require authorization by the MAC address of the client. If you need to 
+use a custom MAC address instead of the module's default (hardware) MAC to access a Wifi network, 
+you can spoof any MAC address per SSID by::
+
+  OVMS# config set wifi.ssid "<ssid>.ovms.mac" "<bssid>"
+
+Set the ``bssid`` in standard hexadecimal 6-byte MAC address notation, i.e. ``xx:xx:xx:xx:xx:xx``. 
+The WiFi driver falls back to the module's hardware MAC if the syntax doesn't match.
+
+
+--------------------------
 AP Bandwidth Configuration
-------------------------------
+--------------------------
+
 In normal operation, the default AP bandwidth is set to 20Mhz to reduce interference and improve the signal quality. If a wider 40Mhz
 bandwidth is preferred, eg for high throughput logging, set the network configuration ``wifi.ap.bw`` with the command::
  

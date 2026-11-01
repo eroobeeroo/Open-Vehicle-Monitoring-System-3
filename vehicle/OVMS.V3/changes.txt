@@ -1,8 +1,532 @@
 Open Vehicle Monitor System v3 - Change log
 
 ????-??-?? ???  ???????  OTA release
+- OTA / Cellular / Server V2 & V3: improve OTA flash reliability over cellular connections by
+    pre-erasing the target partition via HTTP HEAD before starting the download, writing in
+    512-byte flash slices with HTTP Range resume support, lowering the cellular UART RX FIFO
+    full threshold, and introducing OTA flash lifecycle events to pause background traffic
+    (cellular status polling, GPS NMEA stream, Server V2 & V3 metric/notification transmissions)
+    while an OTA flash operation is in progress.
+  New events:
+    ota.flash.starting                                -- signaled before OTA flash begins
+    ota.flash.done                                    -- signaled after OTA flash succeeded
+    ota.flash.abort                                   -- signaled when OTA flash was aborted/failed
+- WiFi: add support for open WiFi networks (using '-' or 'OPEN' as password placeholder) and
+    per-SSID client MAC address spoofing in the web UI and configuration, reverting to the
+    default hardware MAC address for all other networks.
+  New config:
+    [wifi.ssid] <ssid>.ovms.mac                       -- custom client MAC address (spoofed) for <ssid>
+- Power Management: add option to power off cellular modem after configurable minutes of active
+    WiFi connection while not charging the 12V battery, an optional fallback to power the
+    modem back on if the WiFi connection is lost, and a live power status / estimated OVMS
+    current consumption overview in the web UI and CLI.
+  New feature: periodic power saving (duty-cycling / deep sleep) after configurable days of
+    inactivity (tracked independently of 12V trickle charging), reset upon vehicle.on event.
+  New commands:
+    pmgmt status                                      -- show power status and estimated consumption
+    pmgmt config                                      -- show power management configuration
+    pmgmt poweroff <modem|wifi|both>                  -- power off modem, wifi or both as if delay reached
+    pmgmt poweron <modem|wifi|both>                   -- power on modem, wifi or both and reset delay timers
+    pmgmt powersaving set <modem|wifi|both|deepsleep [days]> -- set periodic power saving target
+    pmgmt powersaving ctrl <on|off>                   -- enable or disable periodic power saving mode
+    pmgmt powersaving on [modem|wifi|both|deepsleep [days]] -- activate periodic power saving immediately
+    pmgmt powersaving off                             -- deactivate periodic power saving immediately
+    pmgmt powersaving status                          -- show periodic power saving status
+  New configs:
+    [power] modemoff_wifi_delay (int, default 0)      -- delay in minutes before modem is turned off when WiFi connected (0 = disabled)
+    [power] modem_wifi_fallback (bool, default false) -- turn on modem when WiFi disconnects
+    [power] wifioff_if_disconnected (bool, default false) -- turn off WiFi after wifioff_delay only when no active WiFi connection exists
+    [power] powersaving.enabled (bool, default false) -- enable periodic power saving
+    [power] powersaving.days (int, default 4)         -- inactivity days threshold
+    [power] powersaving.deepsleep_days (int, default 9) -- limit deepsleep to x days before switching to both (0 = unlimited)
+    [power] powersaving.target (string, default both) -- target action (modem, wifi, both, deepsleep)
+    [power] powersaving.interval (int, default 6)     -- duty-cycle interval in hours
+    [power] powersaving.duration (int, default 15)    -- duty-cycle duration in minutes
+- Server V2: disable legacy V2/MP App/client workaround of changing commas in command responses
+    and text notifications into semicolons, add configuration option to enable if still needed.
+  New config:
+    [server.v2] workaround.legacy_field_enc   -- yes = enable comma mangling, default no
+- smart EQ: Added a trickle charge configuration Website
+  New command:
+    xsq climate <minutes>         -- start pre-conditioning for xx minutes
+    xsq trickle <minutes>         -- start trickle 12V charge for xx minutes
+  New configs:
+  - [xsq] 12v.trickle.time (int, default 10)  -- trickle time in minutes
+- New vehicle: Toyota e-TNGA platform, supporting the Subaru Solterra (SUBSOL) and the
+    Toyota bZ4X (TOYBZ4X) via the OBD-II port. The two vehicles are thin wrappers over a shared
+    platform module which carries the CAN polling, the charging state machine and the BMS
+    handling, so support is identical on both; only the Solterra has been confirmed on hardware.
+    Support includes:
+      VIN, SOC (displayed and BMS), speed, odometer, gear and drive mode
+      Per-cell BMS voltages and temperatures, with the pack arrangement derived from the
+        battery replies at runtime so the 96-cell and the 2025/26 refresh packs both work
+      Battery capacity and state of health (v.b.cac / v.b.soh / v.b.capacity)
+      AC and DC charging: state, type, power, station and vehicle limits, charge port state
+      Charge session reports written to disk as HTML plus a per-sample CSV
+      TPMS pressures and temperatures via the gateway relay
+      12V auxiliary battery voltage, current, temperature and capacity from the EV ECU
+      Cabin and ambient temperature, HVAC power and per-trip cabin energy
+      Throttle, brake and park brake position
+    Charge control, climate control and lock/unlock are not supported.
+  New configs:
+    - [xte] tpms.pressure.warn / .alert    -- Tyre pressure warning and alert thresholds (kPa)
+    - [xte] tpms.temp.warn / .alert        -- Tyre temperature warning and alert thresholds (C)
+    - [xte] bat.nominal.ah                 -- Pack nominal capacity in Ah, the denominator for
+                                              v.b.soh (default 0 = derive from the detected
+                                              pack, established for the 96-cell pack only)
+    - [xte] bat.nominal.volt               -- Pack nominal voltage in V, used to convert the
+                                              capacity to kWh for v.b.capacity (default 0 =
+                                              derive from the detected pack)
+- Server V3 (MQTT): added an optional liveness check that can be enabled in the web UI. When
+    enabled, the MQTT client sends a ping probe after a configured idle period and reconnects if the
+    broker remains silent beyond the timeout window. The check is off by default and can be toggled
+    from Config → Server V3.
+    [server.v3] liveness.enabled (bool, default false)
+    [server.v3] updatetime.probe (int, default: 60)
+- smart EQ: added an opt-in GPS history log for driving position/vehicle data. 
+  This feature is disabled by default and must be explicitly enabled by the user from the vehicle web UI, 
+  so personal location data is not logged unless the user intentionally enables it.
+  For OVMS Connect App, this option improves tracking and fills in the waypoints if the connection to the PyOVMS V3 server has been interrupted.
+- Cellular: added shell command for USSD code transmission to simplify USSD requests via V3/MQTT.
+    If a response is received, it will be forwarded as a text notification (subtype modem.received.ussd,
+    see https://docs.openvehicles.com/en/latest/userguide/notifications.html#standard-notifications)
+    Note: USSD support and codes depend on the network provider. Commonly supported are *100# or *101#
+    to query the balance and *135# to query the phone number.
+  New command:
+    cellular sendussd <code>
+- Cellular: added Web UI settings for GPS parking holiday handling.
+    New configs:
+      [modem] gps.parkholiday (days, defaul 3)            -- parking threshold after which GPS re-activation uses the holiday multiplier
+      [modem] gps.parkholiday.multi (factor, default 5)   -- multiplier applied to the GPS re-activation delay after the holiday threshold is reached
+    The GPS re-activation delay now multiplies by the configured holiday factor once the parked time exceeds the configured holiday threshold.
+- Server V2 & V3: suspend periodic reconnect attempts on authentication failures (incorrect credentials)
+    to avoid blocking of shared public IP addresses (mobile network proxies/gateways). A new reconnect
+    attempt is triggered by changing the configuration. Changing the server configuration now also
+    automatically triggers a reconnect, and the web UI assists in tracking config change results by
+    showing the respective status and start/stop buttons after a change.
+  New notifications (+ implied events):
+    - [alert] server.v2.auth.failure         -- Incorrect server V2 login credentials
+    - [alert] server.v3.auth.failure         -- Incorrect server V3 login credentials
+- VW e-Golf: set v.e.charging12v (12V battery charging) while the HV system is active (KCAN
+    0x187 HV_Bordnetz_aktiv), HV charging is in progress or remote climate is running. The DC-DC
+    converter is the only 12V charge source; Power Management relies on this metric.
+- VW e-Golf: set v.e.drivemode from the Charisma / Fahrprofilauswahl active profile
+    (KCAN 0x386): Normal/Eco/Eco+ -> 1/2/3 (matching the e-Up module), replacing the
+    incorrect B-gear-derived value.
+- VW e-Golf: add regenerative-braking strength metric xvg.v.recup (0..4: D0=0, D1=1,
+    D2=2, D3=3, B=4; -1 = N/A), decoded from the gear-selector frame 0x187.
+- VW e-Golf: correct v.b.current / v.b.power sign to the OVMS output=positive convention
+    (discharge positive, charge negative).
+- VW e-Golf: report charge current and power (v.c.current / v.c.power) while charging. The
+    comfort bus carries no AC charger-side telemetry, so these mirror the DC pack-side 0x191
+    measurement (sign-flipped to the charge convention) and are zeroed when charging stops.
+    The app's charge screen previously showed 0 A.
+- VW e-Golf: add charge-profile and departure-timer management over the Battery Control channel
+    (LSG 0x25). "xvg charge profile list" lists the stored charge profiles (charge locations);
+    "xvg charge profile set" edits one profile's fields (profile 0 = charge current / min SoC /
+    target temperature; charge locations 1-3 = charge/climate flags, charge current, target SoC)
+    via a read-modify-write that preserves every other stored field, with maxCurrent hard-capped.
+    "xvg charge timer list/set/enable/disable/clear" manage the recurring departure timers, each
+    bound to a charge profile. See the built-in command help for the arguments of each.
+- VW e-Golf: front windscreen heating for remote cabin pre-conditioning. "xvg charge profile set 0
+    frontwindow on|off" (alias "fw") sets or clears the front window heater option of the global
+    profile 0 ("Optionen"), which climate control runs; the setting is stored in the car and stays
+    until changed, and can also be changed while climate is running. "xvg charge profile list"
+    shows the option as "fw". The car's infotainment has no equivalent setting. The windscreen is
+    only heated when the outside temperature is below 4 C (HVAC module 08 adaptation "IDE07303-Rem.start
+    funct.:activ.temper. of windshield defrost.heat.", default 4 C).
+  New metric:
+    - xvg.v.env.heated_front_window    -- Front windscreen heating active during remote
+                                          pre-conditioning (bool, KCAN 0x594); does not
+                                          reflect the dashboard heater button
+- vehicle_cadillac_ct5:
+    Set the acceptance filter to allow 0x063 (v.on) and 0x5E4 (v.b.soc).
+    The high frame rate of this vehicle (> 1600/sec) causes watchdog
+    resets when the engine is running. Setting the acceptance filter
+    means we don't see the VIN frames but at least we're not crashing
+    over and over.
+- Fiat eDoblo: added passive lock status from CAN 0x612.
+- VW e-Golf: populate v.e.awake and v.e.on, derived from the terminal (KL_15, 0x3C0)
+    and drivetrain-READY (0x391) frames.
+- VW e-Golf: remote cabin climate control (pre-conditioning) over the KCAN comfort bus using
+    the VW BAP application protocol (bundled bap-lib) to the Battery Control unit (LSG 0x25).
+    Start/stop from the app or the standard climatecontrol command; the car runs its stored
+    global pre-conditioning profile. OVMS reads the stored global profile back and rewrites it
+    with the operation set to climate and the "Climatise on battery power" option enabled (so
+    pre-conditioning works unplugged; an allow-flag, not a force — the car still uses wall power
+    when plugged, and a charge command clears it so climate re-asserts it), every other field
+    (incl. temperature) preserved, then triggers — so the result follows the setpoint configured
+    in the car. The
+    comfort/EV cluster is woken with a CAN-NM message from a spare node id rather than
+    impersonating the factory OCU, avoiding the duplicate-node collision with the car's real
+    OCU; the command is retried until the Battery Control unit confirms it and the result is
+    reported on v.e.hvac.
+    Requires the KCAN (J533) wiring described in the user guide. Implemented in a self-contained
+    vehicle_vwegolf_bat_ctrl.cpp module (BatteryControl: climate + charge).
+- VW e-Golf: remote charge control over the same Battery Control channel (LSG 0x25), sharing the
+    climate command path (one command in flight at a time). The "charge current" command sets the
+    charge-current limit as a persistent edit of the stored global profile (snapped to the car's
+    allowed steps 5/10/13/32 A); it changes only that field and sends no start trigger. All charge
+    control acts on the global ("Optionen") immediate-charge profile only — a departure timer uses
+    its own per-timer profile, so an OVMS-set current does not apply to a timer-scheduled charge. The
+    "charge start" / "charge stop" commands arm the global profile for charging and fire the
+    immediate OperationMode trigger. The stop is op-specific (it arms the pure-charge op first, so
+    "charge stop" is blocked while climate is running — stop climate first, as the charge arm would
+    otherwise kill climate). The immediate charge start/stop trigger has no factory reference on this
+    platform (the car's own UI only edits departure timers); it is validated on a 2020 e-Golf and
+    gated (no profile read/arm -> no trigger).
+- VW e-Golf: v.e.parktime no longer clamped — the 0x6B7 CAN park-time field is 17-bit
+    (saturates at ~36.5 h), so the saturated max is ignored and OVMS's native (uncapped)
+    park-time counter is used instead.
+- OTA: Web UI firmware upload — the firmware setup page "Flash from file" tab can now upload a
+    firmware image directly from the browser and flash it to the inactive OTA partition, with no
+    SD card needed. The upload is streamed to flash (not buffered in RAM); the SD-card path flow
+    is unchanged. New endpoint: POST /api/firmware/upload (cookie/apikey authorized). A progress
+    bar tracks the upload, switching to a "finalising" indicator while the module writes the last
+    of the image to flash. The image size is sent (?size=) so only the needed flash is erased
+    (faster start) and an oversized image is rejected up front.
+- OTA: Unified the firmware setup page's flash methods (Update now, Flash from web, Flash from
+    file/SD, and the browser upload) onto one shared progress dialog: each now shows the same
+    progress bar (driven from the flash command's output for the http/SD methods), a consistent
+    success/failure state, and highlights the "Reboot now" action when a flash completes. The
+    primary action in each method is styled accordingly.
+
+2026-07-18 MB   3.3.006  OTA release
+- smart EQ:
+    As soon as the 12V trickle charge begins, a timestamp is generated and stored in `m_12v_trickle_charge_times`.
+    The counted value is set in `xsq.12v.trickle.count`.
+    Within `Ticker3600`, a routine removes all timestamps older than 24 hours and updates `xsq.12v.trickle.count` by -1.
+    New metric:
+      xsq.12v.trickle.count                  -- Count of 12V trickle-charge cycles in 24h
+    updated metric:
+      xsq.bms.contactor.cycles (vector int)  -- [0]=max, [1]=now, [2]=consumed, [3]=diff, [4]=1h_counted_changes
+    New config:
+      [xsq] bms.alert.above.cycles (int)     -- alert threshold for cycles counted; default 50000
+      [xsq] bms.contactor.1h.limit (int)     -- limit for contactor cycles changes per hour for alerting; default 8
+- OTA/firmware: include tools to mitigate 4MB firmware size limit by upgrading the partitioning scheme;
+    for details see: https://docs.openvehicles.com/en/latest/userguide/partitioning.html
+- VW e-Up: extended battery health / aging info (with web UI integration): total battery age,
+    charge time counters AC/DC and parked battery state times (by SOC & temperature ranges)
+    (inspired by OBD Amigos)
+  New metrics:
+    xvu.b.time.charged.ac                 -- Total time charged AC [Hours]
+    xvu.b.time.charged.dc                 -- Total time charged DC [Hours]
+    xvu.b.time.parked                     -- Total time parked [Days]
+    xvu.b.time.parked.cold                -- Total time parked below  0 °C [Days]
+    xvu.b.time.parked.empty               -- Total time parked below 10% SOC [Days]
+    xvu.b.time.parked.full                -- Total time parked above 90% SOC [Days]
+    xvu.b.time.parked.hot                 -- Total time parked above 30 °C [Days]
+    xvu.b.time.parked.state               -- Park times matrix: 6 SOC x 8 temperature ranges
+    xvu.b.time.total                      -- Total battery age [Days]
+- Server V3 (MQTT): AWS IoT Core compatibility fixes:
+    - mTLS client certificate authentication for MQTT brokers that require it
+      (e.g. AWS IoT Core). Configured via web UI (Config → Server V3).
+    - Fixed MQTT CONNECT to omit empty username/password for certificate-only auth.
+    - New option "retain.depth.limit": disables RETAIN on deep topics (>8 segments)
+      for brokers like AWS IoT Core that reject them.
+- Autostart: added init option "minimal" to boot with just basic networking as configured; this is
+    now the first fallback in case of repeated early crashes, aiming at keeping the module reachable
+    in case of a bug in a higher level module / configuration. Auto init will be disabled only if
+    early crashes continue in minimal mode.
+  Config extension:
+    [auto] init                           -- "no" / "yes" / "minimal" (default "yes")
+- Server V3: the MQTT client ID to use can now be configured. While not normally necessary, changing the
+    client ID may be necessary to discard an existing MQTT server session when changing the username.
+  New configs:
+    [server.v3] clientid                  -- MQTT client ID, default: vehicle ID
+- New vehicle: Cadillac CT5
+    Initial support includes: VIN, fuel level (SOC), and run state.
+    The CT5 uses the GM Global B platform which requires authentication
+    so polling isn't currently possible. Instead we listen to CAN
+    bus #5 which is present on the audio amplifier connector X3 in
+    the trunk.
+- Command framework: add command to run commands in a background task, allowing the execution of long
+    running commands via the server v2/v3 command channel or ssh without triggering the watchdog.
+    Example: run ota flash http ; module reset
+    Commands will be interpreted just as in a regular shell/console, so can be abbreviated etc.
+    Note: using this is not strictly necessary for the builtin web shell & HTTP REST API, as the web
+      framework already uses an individual task for each command execution, but it's still possible.
+  New command:
+    run [-n<i|o|s>] [-S<stacksize>] [-P<priority>] <command…> [; <command…>]
+      Run command(s) in background task (log tag: 'bgshell'), send output via notification.
+      Use a single ';' to separate multiple commands.
+      Notification default mode (type) is 'info' (-ni), -ns = 'stream', -no = off.
+      Notification subtype scheme: 'cmd.full.command.name'
+      Default task stacksize is 6144, default task priority is 5.
+- chevrolet_c6_corvette: Add TPMS support.
+- swcan: module included in the default build configuration. SWCAN bus must be initialized manually 
+	from the car module. During initialization, CAN3 will be deinitialized and CAN4 used for SWCAN. 
+	Configuration "use_swcan_adapter" has been added to Voltampera and Boltev vehicles.
+- New vehicle: Volkswagen e-Golf via J533 connector
+    Initial support added for: Odometer, SoC, Est. Range, Charge Status, PRNDL State, VIN
+    https://docs.openvehicles.com/en/latest/components/vehicle_vwegolf/docs/index.html
+- Module: added heap integrity check + alert command for usage in e.g. custom event scripts,
+    enables adding checks on specific system events and/or with higher frequency.
+    Example: perform heap integrity check when the server V2 gets stopped:
+      vfs echo "module check alert" /store/events/server.v2.stopped/90-checkheap
+  Command extension:
+    module check alert                    -- Check for and send one-off alert on heap corruption
+- VFS: added echo command to write a line to a file
+  New commands:
+    vfs echo <line> <file>                -- Write <line> to <file>, creating/replacing the file
+- smart EQ:
+  New commands:
+    xsq ed4scan                           -- Output ED4scan-like BMS diagnostic data
+                                             (battery health, SOC kernel data, cell resistance,
+                                             contactor cycles, temperatures, voltages)
+- Module: add heap tracing tools -- NOTE: heap tracing will for now not be enabled by default on user builds.
+    This is meant to be used by developers to track down heap corruptions. If you encounter many
+    random crashes, ask your maintainer to provide a debug build to you with heap tracing enabled,
+    and let her/him guide you through the usage, or grant him/her remote access to your module.
+    See: https://docs.espressif.com/projects/esp-idf/en/v3.3/api-reference/system/heap_debug.html
+  New commands:
+    module trace start [num_records]    -- init & start heap tracing, num_records defaults to 500
+    module trace stop                   -- stop heap tracing & cleanup memory
+    module trace pause                  -- pause heap tracing for inspection
+    module trace resume                 -- resume heap tracing
+    module trace status                 -- show current status
+    module trace dump                   -- dump allocations & frees recorded
+- Module: added heap integrity alert, added task ownership to heap check report, added task handles to
+    task log, added debug options to web UI (Config → Notifications)
+  New config:
+    [module] debug.heap.alert           -- [bool] perform heap check every 5 minutes, send alert on
+                                            corruption (default: no)
+  New event:
+    system.heap.corrupted               -- Heap corruption detected
+  New notification:
+    [alert] debug.heap.corruption       -- Heap corruption details
+  Command extension:
+    test heapcorruption <restore|keep>  -- default: 'restore', use 'keep' to test heap alert
+  History record extension:
+    "*-OVM-DebugTasks" v2: per task record extended by <handle>
+- Module framework: enable remote use of the system's heap corruption test, i.e. command "module check"
+    can now be used within any shell or command channel, not just the USB console.
+  New command(s):
+    test heapcorruption -- test for heap integrity checker
+- Workaround for iOS Open Vehicle App 1.8.6
+    Workaround for legacy iOS App, hiding zero/negative temperatures to keep other TPMS data visible.
+    This workaround only manipulates the TPMS temperature metric in message W.
+- New vehicle: FIAT eDoblo via OBD-II port
+    Initial support added for:
+      VIN, SoC, SoH
+      Door status
+      Odometer
+      HV, LV battery voltage
+      temperatures
+- TPMS framework: added sensor mapping commands for wheel rotation/swap scenarios
+    New commands:
+      tpms map status   -- show current TPMS sensor-to-wheel mapping with details
+      tpms map get      -- machine-readable output like message Y without header MP-0 Y
+      tpms map set      -- remap sensors using wheel position names (e.g., fl=rr fr=fl rl=fr rr=rl)
+      tpms map reset    -- reset mapping to default (e.g. FL=0, FR=1, RL=2, RR=3)
+    Config: [vehicle] tpms.xx (sensor index per wheel position, layout by GetTpmsLayout())
+    Note: requires vehicle to implement UsesTpmsSensorMapping() returning true
+- New vehicle: Maxus T90 EV (MT90) via OBD-II port
+    Initial support added for:
+      VIN, SOC, SOH & READY state
+      AC plug / pilot detection
+      Lock status
+      Odometer
+      Temperature metrics
+- Renault Twizy: support added for standard metric "v.e.aux12v" (base system awake),
+    OBD polling (DTC checks) enabled already with base system awake
+    (= DTC available in STOP conditions)
+- VW e-Up: enable framework climate preconditioning scheduler web UI
+    (Note: climate control only available with T26 connection)
+- Vehicle framework: Scheduled precondition control with duration support
+    Centralized implementation for all vehicles with per-vehicle override capability.
+    Supports multiple time slots per day with individual duration settings (5-30 minutes).
+    Global enable/disable switch with config persistence.
+    copy function to duplicate schedules across multiple days.
+  New commands:
+    climatecontrol schedule set <day> <times>  -- Set schedule for a day, times format: HH:MM[/duration][,HH:MM[/duration],...]
+                                                     Examples: "07:30", "07:30/10", "07:00/5,17:30/15"
+                                                     Duration in minutes
+    climatecontrol schedule list               -- List all configured schedules with next scheduled event
+    climatecontrol schedule clear <day|all>    -- Clear schedule for specific day or all days
+    climatecontrol schedule copy <source-day> <target-days>
+                                               -- Copy schedule from one day to others
+                                                     Examples: "mon tue-fri", "fri sat,sun"
+                                                     Supports range syntax (tue-fri) and comma-separated lists
+    climatecontrol schedule enable             -- Enable scheduled precondition (global switch)
+    climatecontrol schedule disable            -- Disable scheduled precondition (global switch)
+    climatecontrol schedule status             -- Show schedule status and configured times
+  New config:
+    [vehicle] climate.schedule.<day>           -- Schedule for day (mon/tue/wed/thu/fri/sat/sun)
+                                                  Format: HH:MM[/duration][,HH:MM[/duration],...]
+    [vehicle] climate.precondition             -- Enable/disable scheduled precondition (bool, default false)
+  precondition scheduler features: (ported from ZOE PH2)
+    - Multiple times per day support (comma-separated: "07:30/5,17:45/10")
+    - Individual schedule per weekday
+    - Automatic trigger based on system time
+    - Integration with existing climate control
+    - Web UI configuration page at /cfg/preconditionschedule
+    - Automatic restart mechanism for extended runtime (configurable HVAC duration)
+    - Duplicate prevention (same time won't trigger twice)
+    - Copy function for quick weekly schedule setup
+- smart EQ:
+    Add multiple CAN frame parsers for energy and charging metrics
+    Add automatic 12V ADC factor recalculation history tracking
+- Renault Zoe Ph2:
+    - Added temperature-based PTC auto-enable feature
+      - Auto-enables PTCs when outside temperature in range (default 9.5-20°C)
+      - Configurable via Web UI or console commands
+    New config:
+      [xrz2] auto_ptc_enabled           -- [bool] enable auto-PTC based on temperature (default: no)
+      [xrz2] auto_ptc_temp_min          -- [float] minimum temperature for auto-enable (default: 9.5°C)
+      [xrz2] auto_ptc_temp_max          -- [float] maximum temperature for auto-enable (default: 20.0°C)
+    Restructured the entire codebase for improved readability
+    Removed the water pump lifetime metric and water pump reset command
+    Added custom metrics for motor/inverter state monitoring (rotor/stator currents and temperatures)
+    New metrics:
+      xrz2.m.temp.stator1               -- Stator temperature sensor 1 (°C)
+      xrz2.m.temp.stator2               -- Stator temperature sensor 2 (°C)
+      xrz2.m.temp.rotor.raw             -- Rotor temperature raw estimation (°C)
+      xrz2.m.temp.rotor                 -- Rotor temperature estimated (°C)
+      xrz2.m.current.stator.u           -- Stator phase U current, absolute value (Amps)
+      xrz2.m.current.stator.v           -- Stator phase V current, absolute value (Amps)
+      xrz2.m.current.stator.w           -- Stator phase W current, absolute value (Amps)
+      xrz2.m.current.rotor1             -- Rotor current sensor 1 (Amps)
+      xrz2.m.current.rotor2             -- Rotor current sensor 2 (Amps)
+      xrz2.m.rotor.resistance           -- Rotor reference resistance (Ohms)
+      xrz2.m.rotor.voltage              -- Rotor excitation voltage I×R calculated (Volts)
+    Added manual PTC activation for heating while charging or when the compressor is defective
+    Added a lighting command, similar to the key fob button
+    Added a coming-home function
+    Added remote preconditioning via the key fob
+    Added PV/Solar charging mode to suppress per-session charge start/stop notifications on PV-controlled wallboxes
+      Sends a single summary notification when the charge cable is unplugged, including the total kWh charged across all sessions
+    Added DC/DC activation and keep-alive via OVMS
+      Enables and keeps the HV system alive regardless of lock status or whether the Zoe was previously asleep
+      Automatically activates the DC/DC converter to recharge the 12 V battery when the voltage threshold is reached
+      Added configurable post-ignition DC/DC runtime (0–60 min) to reduce contactor wear during short stops or when preparing the Zoe for a trip
+      Added manual DC/DC activation with configurable SOC and time limits, ideal for powering 230 V inverters, for example while camping
+    Added a working trunk unlock command
+    Added TXCallback to verify successful message transmission
+    Added ECU feedback handling instead of sending messages blindly; currently implemented only for the coming-home function
+    Added wake-up messages for when the CAN bus is asleep
+- Wifi: added command to restart the Wifi network into the default (autostart) config,
+    and added default for the AP SSID on the apclient mode.
+  New/changed commands:
+    wifi restart                        -- Restart Wifi network into autostart config
+    wifi mode apclient                  -- Parameter <apssid> is now optional, defaults to autostart config
+- Cellular: added option to restrict the modem network type to 2G/3G/4G. Restricting
+    the network type may help in case of frequent network losses / reconnects.
+  New config:
+    [modem] net.type (string)           -- auto/2G/3G/4G, default/empty=auto
+- smart EQ:
+    Hardened poll reply & CAN parsing (REQUIRE_LEN / DLC guards, corrected switch fallthrough).
+    Automatic 12V ADC factor recalculation using CAN 12V voltage.
+    New config:
+    [xsq] calc.adcfactor (bool)             -- activate sutomatic ADC factor recalculation (default false)
+    [xsq] adc.samples (int)                 -- default 4
+- Cellular: GPS auto pause on parking reactivate when Car awakes. This reduces time to first GPS fix.
+  New config:    
+    [modem] gps.parkreactawake (bool)   -- GPS is switched on for the gps.parkreactlock (minutes) time when the GPS parking pause is active and the car wakes up (default: no)
+- server V3 (changes):
+    Chunked metric transmission to limit burst size:
+      TransmitAllMetrics(): up to 100 metrics per tick, continues next call.
+      TransmitModifiedMetrics(): up to 150 modified metrics per tick.
+    Priority path for GPS/time metrics with optional extras:
+      Default priority: v.p.latitude, v.p.longitude, v.p.altitude, v.p.speed, v.p.gpsspeed, m.time.utc
+    New update Command:
+      server v3 update priority                   -- send prioritized metrics
+- Webserver: Server V3 (MQTT) config page
+    Added priority sending controls:
+      [server.v3] updatetime.priority (bool)      -- prioritize selected metrics while the vehicle is awake, update in car on interval
+      [server.v3] updatetime.immediately (bool)   -- metrics should be sent immediately when they change
+      [server.v3] metrics.priority (string)       -- comma separated metric names; supports * and prefix* wildcards
+      [server.v3] metrics.include (string)        -- comma separated metric names; supports * and prefix* wildcards
+      [server.v3] metrics.exclude (string)        -- comma separated metric names; supports * and prefix* wildcards
+      [server.v3] metrics.include.immediately (string)    -- comma separated metric names; supports * and prefix* wildcards
+      [server.v3] metrics.exclude.immediately (string)    -- comma separated metric names; supports * and prefix* wildcards
+      [server.v3] queue.sendall (int)             -- queue size send 'sendall' metrics, default 100 metrics per ticker1
+      [server.v3] queue.modified (int)            -- queue size send 'modified' metrics, default 150 metrics per ticker1
+- Webserver: adjustable websocket TX job queue size to accomodate high update
+    frequencies / stream payload sizes and/or slow clients / client connections
+  New config:
+    [http.server] ws.txqueuesize  -- in jobs, default 50
+- server V3 (additions):
+    Added MQTT client on-demand requests to reduce baseline data usage (authenticated per client, with basic rate-limiting to prevent abuse):
+      <prefix>/client/<clientid>/request/metric   -- payload: one or multiple metric name
+                                                     Supports wildcards: * (all), prefix* (simple prefix match); mid-string wildcards (e.g. "bat*temp") and '?' are not supported.
+                                                     Example: "v.b.*" matches all metrics starting with "v.b."
+                                                     Each matching metric is published immediately on its normal topic.
+      <prefix>/client/<clientid>/request/config   -- payload: param/instance (single pair)
+                                                     Response topic: <prefix>/client/<clientid>/config/<param>/<instance>
+    Subscription topic count increased (MQTT_CONN_NTOPICS=4) to include the two new request channels.
+- server V3:
+    The number of metrics sent per update is limited to 20 and is split into multiple packets if necessary. Only updated data is sent.
+    Prioritize GPS tracking metrics, update interval set at Vehicle stream setting for smoother tracking
+    new config:
+      [server.v3] "updatetime.priority" (bool) -- enable/disable prioritizing GPS tracking
+- smart EQ: removed vehicle specific GPS on/off at parking -> moved to cellular
+- Vehicle notifications: grid log (history records `*-LOG-Grid`) V2 additions:
+    pos_odometer
+- Server V3: 
+  added configurable connect stabilization & random jitter (server.v3 conn.stable_wait / conn.jitter.max) before MQTT connect to reduce reconnect storms.
+- Cellular: 
+  safeguarded CGATT attach/detach (only with mux/PPP), added NetLoss retry limit & optional power‑cycle recovery to prevent loops.
+- esp32wifi:
+  The OVMS will switch from Wifi APClient to Wifi Client mode after the timeout reached and a client is not connected. "APClient" will be restored upon reboot/network restart.
+  new config, settings at Wifi:
+    [network] wifi.ap2client.timeout   -- Wifi Mode APClient to client timeout in minutes (default 30 minutes)
+    [network] wifi.ap2client.enable    -- Wifi Mode APClient to client enable/disable (default disable)
+    [network] wifi.ap2client.notify    -- Notify when Wifi APClient to Wifi Client mode switched (default disable)
+- Vehicle framework: signal generator operation state changes
+  New events:
+    vehicle.gen.start         -- Power delivery started
+    vehicle.gen.stop          -- Power delivery stopped
+    vehicle.gen.pilot.on      -- Pilot signal present
+    vehicle.gen.pilot.off     -- Pilot signal gone
+    vehicle.gen.timermode.on  -- Generator timer has been enabled
+    vehicle.gen.timermode.off -- Generator timer has been disabled
+- Cellular: GPS auto pause on parking reactivate option added (update position).
+  New config:
+    [modem] gps.parkreactivate (minutes)   -- park time in minutes for auto reactivate for GPS lock (gps.parkreactlock), 0 = disabled
+    [modem] gps.parkreactlock  (minutes)   -- GPS lock for 5 minutes until automatic shutdown during parking time (default 5 minutes)
+
+2025-07-18 MB   3.3.005  OTA release
+- Cellular: GPS auto pause on parking option added (power saving).
+  New config:
+    [modem] gps.parkpause     -- park time in seconds for auto pause, 0 = disabled (default)
+- New vehicle: NIU MQi GT EVO or GT 100 electric scooters (NEVO)
+  https://docs.openvehicles.com/en/latest/components/vehicle_niu_gtevo/docs/index.html
+- Smart EQ 453:
+    TPMS pressure alert settings at Features
+    add information commads xsq climate|counter|mtdata|reset|start|total
+- Nissan Leaf:
+    ZE1 inital release
+    Fix: Poll state not set to off when charging stopped by OVMS
+    Enh: SOH_instrument now float not int to support ZE1 instrument values 
+    Enh: Copy v.b.p.temp.max to v.b.temp so that max battery temp displays in app
+- Smart EQ 453:
+    DDT4all simple support, a full List of commands at www.smart-EMOTION.de
+- VW e-Up (OBD): decode & display battery cell level health status & battery module
+    health history, provide v.b.capacity (net capacity in kWh)
+  New metrics:
+    xvu.b.c.soh               -- Array: SOH [%] of each HV battery cell
+    xvu.b.hist.soh.mod.<NN>   -- Array: SOH [%] history of each battery module (NN=01…14/17)
+  New web page:
+    /xvu/battsoh          -- Battery pack & cell SOH info
+- Smart EQ 453:
+    add timebased Pre-heat/cool Control 
+      - can set at Website -> Smart ED/EQ 4.Gen -> Climate/Heater 
+      - at App Features #4: on = 1 off = 2, #5 time like 05:15 = 515, #6 5/10/15 Minutes = 0/1/2
+    add GPS powersaving mode at parking
+    add 12V alert raised, the car starts the 12V charging process for 15 Minutes
+    add Network type switch, option to lock LTE only. Needed, when the Provider has no Datastream at GSM
+- CAN: add error flag decoding (included in can status output)
+  New commands:
+    can <bus> explain [errorflags]    -- Decode error flags into human readable text 
 - DBC Files
   Add unit support
+  Add extended signals/multiplexing support
+  Add support for enum values.
+  Add OvmsDBC duktape object
+    OvmsDBC.Load
+    OvmsDBC.Unload
+    OvmsDBC.Get
 - OVMS Server v3: Ability to define less frequent MQTT communication to save data charges and power
   Events:
     Excludes clock.* events from being published at the start of every minute.
@@ -46,13 +570,12 @@ Open Vehicle Monitor System v3 - Change log
   New commands:
     vehicle aux [status]
     vehicle aux monitor [status]
-    vehicle aux monitor enable
+    vehicle aux monitor enable [[low-threshold] [charging-threshold]]
     vehicle aux monitor disable
   Duktape Support:
     OvmsVehicle.AuxMon.Enable
     OvmsVehicle.AuxMon.Disable
     OvmsVehicle.AuxMon.Status
-
 - Cellular: GPS run state signals added.
   New events:
     system.modem.gpsstart       -- GPS has started
@@ -101,6 +624,14 @@ Open Vehicle Monitor System v3 - Change log
     OvmsPoller.Times.Stop
     OvmsPoller.Times.Reset
     OvmsPoller.Times.GetStatus
+    OvmsPoller.RegisterBus(bus, mode, speed, [,dbcfile])
+    OvmsPoller.PowerDown(bus)
+    OvmsPoller.Poll.Add(..)
+    OvmsPoller.Poll.Remove(..)
+    OvmsPoller.Poll.GetState([busno])
+    OvmsPoller.Poll.SetState([busno,] state)
+    OvmsPoller.Poll.Request(..)
+    OvmsPoller.Poll.SetTrace(enable)
 - Duktape support for Metric Age / Stale
   New Duktape methods
     OvmsMetrics.IsStale

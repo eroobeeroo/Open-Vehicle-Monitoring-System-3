@@ -132,6 +132,7 @@ info    charge.toppingoff           ``stat`` on start of topping off charge/phas
 info    charge.stopped              ``stat`` on planned charge stop
 alert   charge.stopped              ``stat`` on unplanned charge stop
 data    debug.crash                 Transmit crash backtraces (→ ``*-OVM-DebugCrash``)
+alert   debug.heap.corruption       Heap corruption details
 data    debug.tasks                 Transmit task statistics (→ ``*-OVM-DebugTasks``)
 info    drive.trip.report           Trip driving statistics (see `Trip report`_)
 alert   flatbed.moved               Vehicle is being transported while parked - possible theft/flatbed
@@ -144,9 +145,13 @@ alert   modem.wrongpincode          Wrong pin code
 info    modem.received.sms          Show/forward received SMS metadata & text
 info    modem.received.ussd         Show/forward received USSD text
 info    ota.update                  New firmware available/downloaded/installed
+info    ota.partitiontype           Outdated flash partitioning scheme detected
+alert   ota.partitiontype           Outdated partitioning scheme inhibits OTA update
 info    pushover                    Connection failure / message delivery response
 stream  retools.list.update         RE toolkit CAN frame list update
 stream  retools.status              RE toolkit general status update
+alert   server.v2.auth.failure      Incorrect server V2 login credentials
+alert   server.v3.auth.failure      Incorrect server V3 login credentials
 info    valet.disabled              Valet mode disabled
 info    valet.enabled               Valet mode enabled
 alert   valet.hood                  Vehicle hood opened while in valet mode
@@ -176,7 +181,7 @@ values on a power outage.
   - History record type: ``*-LOG-Grid``
   - Format: CSV
   - Archive time: config ``notify log.grid.storetime`` (days)
-  - Fields/columns:
+  - Fields/columns version 1:
 
     * pos_gpslock
     * pos_latitude
@@ -222,6 +227,10 @@ values on a power outage.
     * bat_energy_recd_total
     * bat_coulomb_used_total
     * bat_coulomb_recd_total
+
+  - Version 2 additions:
+
+    * pos_odometer
 
 
 ----------------

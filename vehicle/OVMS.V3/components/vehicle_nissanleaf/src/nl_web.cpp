@@ -71,12 +71,15 @@ void OvmsVehicleNissanLeaf::WebDeInit()
  */
 void OvmsVehicleNissanLeaf::WebCfgFeatures(PageEntry_t& p, PageContext_t& c)
 {
+  auto lock = MyConfig.Lock();
   std::string error;
   bool canwrite;
   bool socnewcar;
   bool sohnewcar;
+  bool ze1;
   std::string modelyear;
   std::string cabintempoffset;
+  std::string speeddivisor;
   std::string maxgids;
   std::string newcarah;
   std::string cfg_ev_request_port;
@@ -85,12 +88,14 @@ void OvmsVehicleNissanLeaf::WebCfgFeatures(PageEntry_t& p, PageContext_t& c)
     // process form submission:
     modelyear           = c.getvar("modelyear");
     cabintempoffset     = c.getvar("cabintempoffset");
+    speeddivisor        = c.getvar("speeddivisor");
     cfg_ev_request_port = c.getvar("cfg_ev_request_port");
     maxgids             = c.getvar("maxgids");
     newcarah            = c.getvar("newcarah");
     socnewcar           = (c.getvar("socnewcar") == "yes");
     sohnewcar           = (c.getvar("sohnewcar") == "yes");
     canwrite            = (c.getvar("canwrite") == "yes");
+    ze1                 = (c.getvar("ze1") == "yes");
 
     // check:
     if (!modelyear.empty()) {
@@ -103,6 +108,10 @@ void OvmsVehicleNissanLeaf::WebCfgFeatures(PageEntry_t& p, PageContext_t& c)
       error += "<li data-input=\"cabintempoffset\">Cabin Temperature Offset can not be empty</li>";
     }
 
+    if (speeddivisor.empty()) {
+      error += "<li data-input=\"speeddivisor\">Speed Divisor cannot be empty</li>";
+    }
+
     if (cfg_ev_request_port.empty()) {
       error += "<li data-input=\"cfg_ev_request_port\">EV SYSTEM ACTIVATION REQUEST Pin field cannot be empty</li>";
     }
@@ -111,12 +120,14 @@ void OvmsVehicleNissanLeaf::WebCfgFeatures(PageEntry_t& p, PageContext_t& c)
       // store:
       MyConfig.SetParamValue("xnl", "modelyear", modelyear);
       MyConfig.SetParamValue("xnl", "cabintempoffset", cabintempoffset);
+      MyConfig.SetParamValue("xnl", "speeddivisor", speeddivisor);
       MyConfig.SetParamValue("xnl", "cfg_ev_request_port", cfg_ev_request_port);
       MyConfig.SetParamValue("xnl", "maxGids",   maxgids);
       MyConfig.SetParamValue("xnl", "newCarAh",  newcarah);
       MyConfig.SetParamValueBool("xnl", "soc.newcar", socnewcar);
       MyConfig.SetParamValueBool("xnl", "soh.newcar", sohnewcar);
       MyConfig.SetParamValueBool("xnl", "canwrite",   canwrite);
+      MyConfig.SetParamValueBool("xnl", "ze1", ze1);
 
       c.head(200);
       c.alert("success", "<p class=\"lead\">Nissan Leaf feature configuration saved.</p>");
@@ -134,12 +145,14 @@ void OvmsVehicleNissanLeaf::WebCfgFeatures(PageEntry_t& p, PageContext_t& c)
     // read configuration:
     modelyear           = MyConfig.GetParamValue("xnl", "modelyear", STR(DEFAULT_MODEL_YEAR));
     cabintempoffset     = MyConfig.GetParamValue("xnl", "cabintempoffset", STR(DEFAULT_CABINTEMP_OFFSET));
+    speeddivisor        = MyConfig.GetParamValue("xnl", "speeddivisor", STR(DEFAULT_SPEED_DIVISOR));
     cfg_ev_request_port = MyConfig.GetParamValue("xnl", "cfg_ev_request_port", STR(DEFAULT_PIN_EV));
     maxgids             = MyConfig.GetParamValue("xnl", "maxGids", STR(GEN_1_NEW_CAR_GIDS));
     newcarah            = MyConfig.GetParamValue("xnl", "newCarAh", STR(GEN_1_NEW_CAR_AH));
     socnewcar           = MyConfig.GetParamValueBool("xnl", "soc.newcar", false);
     sohnewcar           = MyConfig.GetParamValueBool("xnl", "soh.newcar", false);
     canwrite            = MyConfig.GetParamValueBool("xnl", "canwrite", false);
+    ze1                 = MyConfig.GetParamValueBool("xnl", "ze1", false);
 
     c.head(200);
   }
@@ -150,9 +163,12 @@ void OvmsVehicleNissanLeaf::WebCfgFeatures(PageEntry_t& p, PageContext_t& c)
   c.form_start(p.uri);
 
   c.fieldset_start("General");
+
+  c.input_checkbox("ZE1 model", "ze1", ze1, "<p>ZE1 models use a slightly different CAN structure to AZE0 or ZE0 cars</p>");
+
   c.input_radio_start("SOC Display", "socnewcar");
   c.input_radio_option("socnewcar", "from dashboard display",   "no",  socnewcar == false);
-  c.input_radio_option("socnewcar", "relative to fixed value:", "yes", socnewcar == true);
+  c.input_radio_option("socnewcar", "relative to fixed value (required for AZE0):", "yes", socnewcar == true);
   c.input_radio_end("");
   c.input("number", NULL, "maxgids", maxgids.c_str(), "Default: " STR(GEN_1_NEW_CAR_GIDS),
       "<p>Enter the maximum GIDS value when fully charged. Default values are " STR(GEN_1_NEW_CAR_GIDS) " (24kWh) or " STR(GEN_1_30_NEW_CAR_GIDS) " (30kWh) or " STR(GEN_2_40_NEW_CAR_GIDS) " (40kWh) or " STR(GEN_2_62_NEW_CAR_GIDS) " (62kWh)</p>",
@@ -160,14 +176,18 @@ void OvmsVehicleNissanLeaf::WebCfgFeatures(PageEntry_t& p, PageContext_t& c)
 
   c.input_radio_start("SOH Display", "sohnewcar");
   c.input_radio_option("sohnewcar", "from dashboard display",   "no",  sohnewcar == false);
-  c.input_radio_option("sohnewcar", "relative to fixed value:", "yes", sohnewcar == true);
+  c.input_radio_option("sohnewcar", "relative to fixed value (required for AZE0):", "yes", sohnewcar == true);
   c.input_radio_end("");
   c.input("number", NULL, "newcarah", newcarah.c_str(), "Default: " STR(GEN_1_NEW_CAR_AH),
       "<p>This is the usable capacity of your battery when new. Default values are " STR(GEN_1_NEW_CAR_AH) " (24kWh) or " STR(GEN_1_30_NEW_CAR_AH) " (30kWh) or " STR(GEN_2_40_NEW_CAR_AH) " (40kWh) or " STR(GEN_2_62_NEW_CAR_AH) " (62kWh)</p>",
       "min=\"1\" step=\"1\"", "Ah");
   c.input("number", "Cabin Temperature Offset", "cabintempoffset", cabintempoffset.c_str(), "Default: " STR(DEFAULT_CABINTEMP_OFFSET),
-      "<p>This allows an offset adjustment to the cabin temperature sensor readings in Celcius.</p>",
+      "<p>This allows an offset adjustment to the cabin temperature sensor readings in Celcius.  Unnecessary on ZE1 models.</p>",
       "step=\"0.1\"", "");
+  c.input("number", "Speed Divisor", "speeddivisor", speeddivisor.c_str(), "Default: " STR(DEFAULT_SPEED_DIVISOR),
+      "<p>This allows the speed readings to be adjusted (which also affects the trip odometer), e.g. if wheel diameter has changed. This can be estimated by comparing trip odometer to GPS track distance.</p>"
+      "<p>The resulting speed will be much lower than the speedometer speed, as the speedometer display is deliberately set ~10% higher.</p>",
+      "min=\"1\" step=\"1\"", "");
   c.fieldset_end();
 
   c.fieldset_start("Remote Control");
@@ -203,6 +223,7 @@ void OvmsVehicleNissanLeaf::WebCfgFeatures(PageEntry_t& p, PageContext_t& c)
  */
 void OvmsVehicleNissanLeaf::WebCfgBattery(PageEntry_t& p, PageContext_t& c)
 {
+  auto lock = MyConfig.Lock();
   std::string error;
   //  suffsoc          	Sufficient SOC [%] (Default: 0=disabled)
   //  suffrange        	Sufficient range [km] (Default: 0=disabled)

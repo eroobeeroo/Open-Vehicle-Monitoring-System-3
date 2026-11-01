@@ -81,6 +81,9 @@ network.wifi.up                               WIFI network is up
 notify.<type>.<subtype>                       An info / alert / error notification is sent
 obd2ecu.start                                 Called after the OBD2ECU process is started.
 obd2ecu.stop                                  Called before the OBD2ECU process is stopped.
+ota.flash.starting                            Signaled before OTA flash begins
+ota.flash.done                                Signaled after OTA flash succeeded
+ota.flash.abort                               Signaled when OTA flash was aborted/failed
 retools.cleared.all                           RE frame log has been cleared
 retools.cleared.changed                       RE frame change flags cleared
 retools.cleared.discovered                    RE frame discovery flags cleared
@@ -114,6 +117,7 @@ server.v3.waitnetwork                         V3 server connection is waiting fo
 server.v3.waitreconnect                       V3 server is pausing before re-connection
 server.web.socket.closed            <cnt>     Web server lost a websocket client
 server.web.socket.opened            <cnt>     Web server has a new websocket client
+system.heap.corrupted                         Heap memory corruption has been detected (reboot advised)
 system.modem.down                             Modem has been disconnected
 system.modem.gotgps                           Modem GPS has obtained lock
 system.modem.gotip                            Modem received IP address from DATA
@@ -191,7 +195,13 @@ vehicle.drivemode.<n>                         Vehicle drivemode has been set to 
 vehicle.gear.forward                          Vehicle has been put in forward gear
 vehicle.gear.neutral                          Vehicle has been put in neutral gear
 vehicle.gear.reverse                          Vehicle has been put in reverse gear
+vehicle.gen.pilot.off                         Vehicle generator pilot signal gone
+vehicle.gen.pilot.on                          Vehicle generator pilot signal present
+vehicle.gen.start                             Vehicle generator power delivery started
 vehicle.gen.state                   <state>   Vehicle generator state has changed
+vehicle.gen.stop                              Vehicle generator power delivery stopped
+vehicle.gen.timermode.on                      Vehicle generator timer has been enabled
+vehicle.gen.timermode.off                     Vehicle generator timer has been disabled
 vehicle.gen.type                    <type>    Vehicle generator connection type has changed
 vehicle.headlights.off                        Vehicle headlights are off
 vehicle.headlights.on                         Vehicle headlights are on
